@@ -11,14 +11,29 @@ using namespace std;
 template <typename T>
 class Stream {
 private:
-    function<vector<T*>*()> streamEval;
+    function<vector<T*>()> streamEval;
 
 public:
 
-    Stream(function<vector<T*>*()> stream) {
+    explicit Stream(function<vector<T*>()> stream) {
         streamEval=stream;
     };
 
+
+    template<typename TContainer>
+    static Stream<T> of (TContainer& cont) { // of - General cont
+        //Create the stream
+        auto stream = Stream<T>([cont]() {
+            //Create and initialize new vector for the stream with cont's values
+            vector<T*> vec(cont.size());
+            std::copy(cont.begin(), cont.end(), vec.begin());
+
+            //return vector
+            return vec;
+        });
+        //Return stream
+        return stream;
+    }
 
 
     template <typename L>
@@ -26,32 +41,19 @@ public:
         //Create the stream
         auto stream = Stream<T>([cont]() {
             //Create new vector for the stream
-            vector<T*>* vec = new vector<T*>();
+            vector<T*> vec = vector<T*>();
             //Initialize vector with cont's values
 
             auto end=cont.end();
             auto iterator=cont.begin();
             while(iterator!=end){
-                vec->push_back(iterator->second);
+                vec.push_back(iterator->second);
                 iterator++;
             }
             //return the vector
             return vec;
         });
         //return the stream
-        return stream;
-    }
-
-    template<typename TContainer>
-    static Stream<T> of (TContainer& cont) { // of - General cont
-        //Create the stream
-        auto stream = Stream<T>([cont]() {
-            //Create and initialize new vector for the stream with cont's values
-            auto vec = new vector<T*>(cont);
-            //return vector
-            return vec;
-        });
-        //Return stream
         return stream;
     }
 
@@ -63,16 +65,16 @@ public:
 
     Stream<T>& filter(function<bool(const T*)> predicat) { //Filter
 
-        function<vector<T*>*()> b4ChangeStream = streamEval;
+        function<vector<T*>()> b4ChangeStream = streamEval;
         //Lazy eval'ed filtered stream.
         streamEval = [b4ChangeStream,predicat] () {
             //These are the procedures that receives a stream and a predicat, and returns a filtered stream.
-            vector<T*> *filteredMyResult = new vector<T*>();
-            back_insert_iterator<vector<T*>> filteredMyResultWithBackInsertIterator = back_insert_iterator<vector<T*>>(*filteredMyResult);
-            vector<T*>* vectorToFilter = b4ChangeStream();
+            vector<T*> filteredMyResult;
+            back_insert_iterator<vector<T*>> filteredMyResultWithBackInsertIterator = back_insert_iterator<vector<T*>>(filteredMyResult);
+            vector<T*> vectorToFilter = b4ChangeStream();
             //If a value passes the predicat, copies the value to the filtered stream.
-            auto first = vectorToFilter->begin();
-            auto last = vectorToFilter->end();
+            auto first = vectorToFilter.begin();
+            auto last = vectorToFilter.end();
             while (first!=last) {
                 if (predicat(*first)) {
                     *filteredMyResultWithBackInsertIterator = *first;
@@ -80,7 +82,7 @@ public:
                 }
                 first++;
             }
-            delete(vectorToFilter);
+
             //return the filtered stream.
             return filteredMyResult;
         };
@@ -91,13 +93,13 @@ public:
 
 
     Stream<T>& sorted(function<bool(const T* cmp1, const T* cmp2)> cmp){ //Sorted
-        function<vector<T*>*()> b4ChangeStream = streamEval;
+        function<vector<T*>()> b4ChangeStream = streamEval;
         //Lazy eval'ed sorted stream.
         streamEval = [b4ChangeStream, cmp] () {
             //Transforms the stream to vector and sorts it with sort and than returns the sorted stream.
-            vector<T*>* sortedResult = b4ChangeStream();
+            vector<T*> sortedResult ( b4ChangeStream() );
             //Sort it.
-            sort(sortedResult->begin(), sortedResult->end(), cmp);
+            sort(sortedResult.begin(), sortedResult.end(), cmp);
             //Return sorted stream.
             return sortedResult;
         };
@@ -112,17 +114,16 @@ public:
 
 
     Stream<T>& distinct(function<bool(const T* a, const T* b)> distinctor){  //Distinct
-        function<vector<T*>*()> b4ChangeStream = streamEval;
+        function<vector<T*>()> b4ChangeStream = streamEval;
         //Lazy eval'ed distincted stream.
         streamEval = [distinctor,b4ChangeStream] () {
             vector<T*> alreadyAppeared;
             bool wasIteratorSeen;
 
-            vector<T*>* myResult = b4ChangeStream();
-            //Set iterator to the beginning
-            auto iterator = myResult->begin();
+            vector<T*> myResult = b4ChangeStream();
+            auto iterator = myResult.begin();
             //Iterate through stream
-            while(iterator != myResult->end()) {
+            while(iterator != myResult.end()) {
 
                 //Check if iterator value was already seen
                 wasIteratorSeen=false;
@@ -138,7 +139,7 @@ public:
 
                 //If iterator value already appeared in the past, then erase it
                 if(wasIteratorSeen) {
-                    myResult->erase(iterator);
+                    myResult.erase(iterator);
                     continue;
                 }
                 //If iterator value has NOT already appeared in the past insert it to already appeared values vector and continue
@@ -163,47 +164,40 @@ public:
 
     template <typename K>
     Stream<K> map(function<K*(const T*)> mapper) {   //Map
-        function<vector<T*>*()> b4ChangeStream = streamEval;
+        function<vector<T*>()> b4ChangeStream = streamEval;
 
         //Lazy eval'ed mapped stream.
         auto temp= [b4ChangeStream, mapper] () {
             //Eval stream to be mapped
-            vector<T*>* beforeMap = b4ChangeStream();
+            vector<T*> beforeMap ( b4ChangeStream() );
             //Create vector to hold the new mapped stream
-            vector<K*>* afterMap = new vector<K*>();
+            vector<K*> afterMap;
 
             //Do the magic
-            auto beforeMapIterator = beforeMap->begin();
+            auto beforeMapIterator = beforeMap.begin();
 
-            while (beforeMapIterator != beforeMap->end()) {
-                afterMap->push_back(mapper(*beforeMapIterator));
+            while (beforeMapIterator != beforeMap.end()) {
+                afterMap.push_back(mapper(*beforeMapIterator));
                 beforeMapIterator++;
             }
 
-            //Memory cleaning!
-            //delete() a day keeps the valgrind away!
-            delete(beforeMap);
-            //Return :)
             return afterMap;
         };
 
         //Create the stream with our Lazy eval'ed mapped stream
-        Stream<K> k= Stream<K>(temp);
+        Stream<K> k(temp);
 
         //Return mapped stream.
         return k;
     }
-
-
 
     template <typename TContainer>
     TContainer collect() {      //Collect
         //Eval the stream
         auto stream = streamEval();
         //Transform its value into a TContainer
-        TContainer cont=(TContainer) *stream;
-        //A delete a day keeps the valgrind away
-        delete(stream);
+        TContainer cont(stream.size());
+        std::copy(stream.begin(), stream.end(), cont.begin());
         //return the container
         return cont;
     }
@@ -211,34 +205,32 @@ public:
 
     void forEach(function<void(T*)> operation) {        //forEach
         //Eval the stream
-        vector<T*>* stream = streamEval();
+        vector<T*> stream = streamEval();
         //Iterate through every value in the stream and apply the function operation on it.
-        auto iterator=stream->begin();
-        auto end= stream->end();
+        auto iterator=stream.begin();
+        auto end= stream.end();
         while(iterator!=end){
             operation(*iterator);
             iterator++;
         }
-        //A delete a day keeps the valgrind away
-        delete(stream);
     }
 
 
     T* reduce(T* start, function<T*(const T* a, const T* b)> reduceFunc){  //Reduce
         //Eval the stream
-        vector<T*>* stream = streamEval();
+        vector<T*> stream = streamEval();
 
         //Iterate through the stream from start to end and act like foldl.
-        T* var=start;
-        auto iterator=stream->begin();
-        auto end = stream->end();
+        if(stream.empty()){return start;};
+
+        auto iterator=stream.begin();
+        auto end = stream.end();
+        T* var=reduceFunc(start,*iterator);
+        iterator++;
         while (iterator!=end) {
-            var = reduceFunc(var, *iterator);
+            var = reduceFunc(*iterator,var);
             iterator++;
         }
-
-        //A delete a day keeps the valgrind away
-        delete(stream);
 
         //Return the final result variable
         return var;
@@ -248,11 +240,10 @@ public:
 
     int count () {      //Count
         //Eval the stream
-        vector<T*>* stream = streamEval();
+        vector<T*> stream = streamEval();
         //Get size
-        int size = stream->size();
-        //A delete a day keeps the valgrind away
-        delete(stream);
+        int size =(int) stream.size();
+
         //Return size
         return size;
     }
